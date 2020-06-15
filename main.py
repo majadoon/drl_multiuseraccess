@@ -58,17 +58,6 @@ model.summary()
 # DQN2
 target_model = dqn_agent.target_model
 
-
-def transfer_weights():
-    """ Transfer Weights from Model to Target at rate Tau
-
-    W = model.get_weights()
-    tgt_W = target_model.get_weights()
-    for i in range(len(W)):
-        tgt_W[i] = tau * W[i] + (1 - tau) * tgt_W[i]
-    target_model.set_weights(tgt_W)
-
-    """
 """
 Memory the experience replay buffer(deque) from which each batch will be sampled
 and fed to the neural network for training
@@ -178,15 +167,6 @@ for iteration in range(iterations):
                 print("prob user " + str(user_i), prob[0])
                 action[user_i] = np.random.choice(action_size, 1, p=prob[0])
 
-            # action[user_i] = np.argmax(prob, axis=1)
-            # print("action n: ", action)
-            # ***************************************************
-
-            # if time_step % interval == 0:
-            # print("state vector of user "+str(user_i), state_vector_i)
-            # print("Q values :", Q_state)
-            # print(prob, np.sum(np.exp(beta*Q_state)))
-
         # =======================================
         '''
         to use same probability dist. for all the users for same policy
@@ -198,16 +178,7 @@ for iteration in range(iterations):
             print("prob 0: ", prob_[0])
             action = np.random.choice(action_size, NUM_USERS, p=prob_[0])
         # =======================================
-        '''
-        # test state for q-value check
-        test_state = np.array([[[1, 0, 0, 1, 0, 0],
-        [0, 1, 0, 1, 1, 0],
-        [1, 0, 0, 1, 1, 0],
-        [0, 0, 1, 0, 1, 0],
-        [0, 0, 1, 0, 0, 1]]])
-        Q_test = model.predict(test_state)
-        print("Q_test: ", Q_test)
-        '''
+
         # now take action as predicted from the Q-values and receiving the observation from thr environment
         obs = env.step(action)
         print("action :", action)
@@ -266,11 +237,9 @@ for iteration in range(iterations):
 
         # rank 3 matrix of size [NUM_USERS,batch_size,step_size]
         actions = utils.get_actions_user(batch)
-        # print("actions", actions.shape, actions)
-        # size[NUM_USERS, batch_size, step_size]
+
         rewards = utils.get_rewards_user(batch)
-        # print("rewards", rewards)
-        # size [NUM_USERS,batch_size,step_size, state_size]
+
         next_states = utils.get_next_states_user(batch)
 
         # reshaping [NUM_USERS,batch_size] -> [NUM_USERS * batch_size]
@@ -294,9 +263,6 @@ for iteration in range(iterations):
             best_action = np.argmax(Q_next[i, :])
             Q_targets[i, actions[i, -1]] = rewards[i, -1] + gamma*target_Q_next[i, best_action]
 
-        # make one hot vectors of actions
-        # actions_one_hot = tf.one_hot(actions[:, -1], action_size)
-
         # calculating loss (bellman loss)
         # loss between whatever is predicted by Q_pred and the targets Q_targets
         loss = model.fit(states, Q_targets, validation_split=0.3, verbose=0, epochs=epochs)
@@ -305,37 +271,14 @@ for iteration in range(iterations):
 
         # updating weight after 5 iteration
         if iteration % update_freq == 0 and iteration > 1:
-            # transfer_weights()
             target_model.set_weights(model.get_weights())
 
-        dqn_agent.model.save_weights("3u2c_lr5_up15_R_b32.h5")
 
-        #print('loss: ', loss.history['loss'])
-        #print("val_loss: ", loss.history['val_loss'])
-        # print('avg_loss', sum(loss.history['loss'])/epochs)
-
+        # epsilon decay
         if epsilon > epsilon_min:
             epsilon *= epsilon_decay
 
-        # plot after every 100 time slots
         if time_step % 50 == 49:
-            plt.figure(1)
-            # plt.plot(np.arange(100), total_reward, "r+")
-            # plt.xlabel('Time Slots')
-            # plt.ylabel('total rewards')
-            # plt.title('total rewards given per time_step')
-            # plt.show()
-            plt.subplot(211)
-            plt.plot(np.arange(51), cum_collision)
-            plt.xlabel('Time Slot')
-            plt.ylabel('cumulative collision')
-            # plt.show()
-            # plt.subplot(212)
-            # plt.plot(np.arange(51), cum_reward)
-            # plt.xlabel('Time Slot')
-            # plt.ylabel('cumulative reward')
-            # plt.title('Cumulative reward of all users')
-            # plt.show()
 
             cum_collision_temp.append(cum_collision[-1])
             cum_reward_temp.append(cum_reward[-1])
@@ -343,10 +286,8 @@ for iteration in range(iterations):
             total_reward = []
             cum_reward = [0]
             cum_collision = [0]
-            # saver.save(sess, 'checkpoints/dqn_multi-user.ckpt')
-            # print time_step,loss , sum(reward) , Qs
 
-    # for higher number of episodes, we can reduce these after certain time slots
+    # beta value increment
     if beta < 20:
         beta *= 1.01
     else:
@@ -358,25 +299,8 @@ for iteration in range(iterations):
     # print("Avg loss: ", loss_init/TIME_SLOTS)
     avg_loss.append(loss_init / TIME_SLOTS)
     avg_val_loss.append(val_loss_init / TIME_SLOTS)
-'''
-    if iteration % 100 == 99 and iteration > 180:
-        plt.figure(2)
-        plt.plot(np.arange(TIME_SLOTS), channel_utilization, label="Channel Utilization")
-        plt.xlabel('TIME SLOT')
-        plt.ylabel('Channel Utilization')
-        plt.savefig('ch_util' + str(iteration) + '-200t-500e_up5_ep0.05_R.eps')
-        plt.show()
-'''
-'''
-plt.figure(3)
-loss_p, = plt.plot(np.arange(iterations), avg_loss, label="Avg Loss")
-val_loss_p, = plt.plot(np.arange(iterations), avg_val_loss, label="Avg Val Loss")
-plt.legend(handles=[loss_p, val_loss_p])
-plt.xlabel('Iterations')
-plt.ylabel('Avg Losses')
-plt.savefig('losses_avg_200t-300e.eps')
-'''
-
+    
+# plotting comulative reward per episode
 plt.figure(4)
 cum_reward_f, = plt.plot(np.arange(iterations), cum_reward_ep, label="Rewards")
 #cum_collision_f, = plt.plot(np.arange(iterations), cum_collision_ep, label="Collisions")
