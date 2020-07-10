@@ -14,13 +14,13 @@ np.random.seed(7)
 # starting time
 start = time.time()
 
-TIME_SLOTS = 200                    # number of time-slots to run simulation
+TIME_SLOTS = 600                   # number of time-slots to run simulation
 NUM_CHANNELS = 2                    # Total number of channels
-NUM_USERS = 3                       # Total number of users
+NUM_USERS = 2                       # Total number of users
 ATTEMPT_PROB = 1                    # attempt probability of ALOHA based  models
 
 memory_size = 10000                 # size of experience replay deque
-batch_size = 32                     # Num of batches to train at each time_slot
+batch_size = 64                     # Num of batches to train at each time_slot
 pretrain_length = batch_size        # this is done to fill the deque up to batch size before training
 epsilon = 0.1                       # initial exploration rate
 epsilon_min = 0.001                 # final exploration rate
@@ -29,12 +29,12 @@ gamma = 0.95                        # discount  factor
 step_size = 5                       # length of history sequence for each data point in batch
 state_size = 2*(NUM_CHANNELS + 1)   # length of input (2 * k + 2)   :k = NUM_CHANNELS
 action_size = NUM_CHANNELS + 1      # length of output  (k+1)
-learning_rate = 1e-5
+learning_rate = 1e-4
 beta = 1                            # temperature (changes from 1 -> 20)
-iterations = 1000                    # total number of iterations
+iterations = 400                   # total number of iterations
 epochs = 1
 tau = 0.05
-update_freq = 15
+update_freq = 5
 same_policy = False                 # use same policy for all users or not
 dueling = True                     # duel Q learning - enable or disable
 
@@ -246,7 +246,6 @@ for iteration in range(iterations):
         # to feed into neural network
 
         states = np.reshape(states, [-1, states.shape[2], states.shape[3]])
-        # print("states: ", states)
         actions = np.reshape(actions, [-1, actions.shape[2]])
         rewards = np.reshape(rewards, [-1, rewards.shape[2]])
         next_states = np.reshape(next_states, [-1, next_states.shape[2], next_states.shape[3]])
@@ -263,6 +262,9 @@ for iteration in range(iterations):
             best_action = np.argmax(Q_next[i, :])
             Q_targets[i, actions[i, -1]] = rewards[i, -1] + gamma*target_Q_next[i, best_action]
 
+        # make one hot vectors of actions
+        # actions_one_hot = tf.one_hot(actions[:, -1], action_size)
+
         # calculating loss (bellman loss)
         # loss between whatever is predicted by Q_pred and the targets Q_targets
         loss = model.fit(states, Q_targets, validation_split=0.3, verbose=0, epochs=epochs)
@@ -271,14 +273,34 @@ for iteration in range(iterations):
 
         # updating weight after 5 iteration
         if iteration % update_freq == 0 and iteration > 1:
+            # transfer_weights()
             target_model.set_weights(model.get_weights())
 
+        # dqn_agent.model.save_weights("3u2c_lr5_up15_R_b32.h5")
 
-        # epsilon decay
+
         if epsilon > epsilon_min:
             epsilon *= epsilon_decay
 
+        # plot after every 100 time slots
         if time_step % 50 == 49:
+            plt.figure(1)
+            # plt.plot(np.arange(100), total_reward, "r+")
+            # plt.xlabel('Time Slots')
+            # plt.ylabel('total rewards')
+            # plt.title('total rewards given per time_step')
+            # plt.show()
+            plt.subplot(211)
+            plt.plot(np.arange(51), cum_collision)
+            plt.xlabel('Time Slot')
+            plt.ylabel('cumulative collision')
+            # plt.show()
+            # plt.subplot(212)
+            # plt.plot(np.arange(51), cum_reward)
+            # plt.xlabel('Time Slot')
+            # plt.ylabel('cumulative reward')
+            # plt.title('Cumulative reward of all users')
+            # plt.show()
 
             cum_collision_temp.append(cum_collision[-1])
             cum_reward_temp.append(cum_reward[-1])
@@ -287,27 +309,41 @@ for iteration in range(iterations):
             cum_reward = [0]
             cum_collision = [0]
 
-    # beta value increment
+
+    # for higher number of episodes, we can reduce these after certain time slots
     if beta < 20:
-        beta *= 1.01
+        beta *= 1.15
     else:
         beta = 20
 
     cum_collision_ep[iteration] = np.sum(cum_collision_temp)
     cum_reward_ep[iteration] = np.sum(cum_reward_temp)
+    
+    if cum_reward_ep[iteration] == NUM_USERS*TIME_SLOTS:
+        learning_rate = 0
+        dqn_agent = DQNAgent(step_size, state_size, action_size, dueling, learning_rate)
+        epsilon = 0
 
     # print("Avg loss: ", loss_init/TIME_SLOTS)
     avg_loss.append(loss_init / TIME_SLOTS)
     avg_val_loss.append(val_loss_init / TIME_SLOTS)
-    
-# plotting comulative reward per episode
+'''
+    if iteration % 100 == 99 and iteration > 180:
+        plt.figure(2)
+        plt.plot(np.arange(TIME_SLOTS), channel_utilization, label="Channel Utilization")
+        plt.xlabel('TIME SLOT')
+        plt.ylabel('Channel Utilization')
+        plt.savefig('ch_util' + str(iteration) + '-200t-500e_up5_ep0.05_R.eps')
+        plt.show()
+'''
+
 plt.figure(4)
 cum_reward_f, = plt.plot(np.arange(iterations), cum_reward_ep, label="Rewards")
 #cum_collision_f, = plt.plot(np.arange(iterations), cum_collision_ep, label="Collisions")
 #plt.legend(handles=[cum_reward_f, cum_collision_f])
 plt.xlabel('Iterations')
 plt.ylabel('Cumulative Rewards')
-plt.savefig('rewd3u2c_lr5_up15_R_b32.eps')
+plt.savefig('rewd2u2c_600t_lr4-0_e0_up5_A_be115_b64.eps')
 print("*************************************************")
 
 # end time
