@@ -12,17 +12,13 @@ import json
 
 np.random.seed(7)
 
-'''
-f1 = open('pmf_u1_lr4_up5_be115_B32.txt', 'w')
-f2 = open('pmf_u2_lr4_up5_be115_B64.txt', 'w')
-f3 = open('pmf_u3_lr4_up5_be115_B64.txt', 'w')
-'''
 fr = open('cumm_reward_DSV_lr4_up5_be115_B64_u1.txt', 'w')
 fa = open('actions_DSV_lr4_up5_be115_B64_u1.txt', 'w')
 
 # starting time
 start = time.time()
 
+iterations = 400                   # total number of iterations
 TIME_SLOTS = 400                   # number of time-slots to run simulation
 NUM_CHANNELS = 2                    # Total number of channels
 NUM_USERS = 3                       # Total number of users
@@ -38,21 +34,12 @@ gamma = 0.98                        # discount  factor
 step_size = 5                       # length of history sequence for each data point in batch
 
 state_size = NUM_CHANNELS + 2
-#state_size = 2*(NUM_CHANNELS + 1)   # length of input (2 * k + 2)   :k = NUM_CHANNELS
 action_size = NUM_CHANNELS + 1      # length of output  (k+1)
 learning_rate = 1e-4
 beta = 1                            # temperature (changes from 1 -> 20)
-iterations = 400                   # total number of iterations
 epochs = 1
-tau = 0.05
 update_freq = 5
-same_policy = False                 # use same policy for all users or not
 dueling = True                     # duel Q learning - enable or disable
-
-#flush_history = False
-#random_history = False
-
-
 
 """
 Initializing environment and calling the deep Q network agent and utilities methods
@@ -74,30 +61,14 @@ model.summary()
 # DQN2
 target_model = dqn_agent.target_model
 
-
-def transfer_weights():
-    """ Transfer Weights from Model to Target at rate Tau
-
-    W = model.get_weights()
-    tgt_W = target_model.get_weights()
-    for i in range(len(W)):
-        tgt_W[i] = tau * W[i] + (1 - tau) * tgt_W[i]
-    target_model.set_weights(tgt_W)
-
-    """
 """
 Memory the experience replay buffer(deque) from which each batch will be sampled
 and fed to the neural network for training
 """
 memory = Memory(max_size=memory_size)
 
-""" 
-sampling random actions from the action space
-for instance, action = [1 2 0] means 1st channel will be accessed by user 1, ...
-2nd channel will be accessed by user 2 and user 3 will not take any action
-"""
 action = env.sample()
-print("action: ", action)
+
 """
 OBSERVATION. The format of obs is:
 [(ACK1,REWARD1),(ACK2,REWARD2),(ACK3,REWARD3), ...,(ACKn,REWARDn) , (CAP_CHANNEL1,CAP_CHANNEL2,...,CAP_CHANNEL_k)]
@@ -117,10 +88,10 @@ State (size 2K +2) is action i of user_i as one hot vector of length action_size
 residual capacity of channels + ACK (0/1) for each user i
 """
 state = utils.state_gen(action, obs)
-print("state: ", state)
+
 
 reward = [i[1] for i in obs[:NUM_USERS]]
-print("reward: ", reward)
+
 
 for ii in range(batch_size * step_size * 5):
     action = env.sample()
@@ -137,17 +108,7 @@ interval = 1  # debug interval
 cum_reward_ep = np.zeros(iterations)
 cum_collision_ep = np.zeros(iterations)
 
-'''
 
-pmf_u1 = np.zeros([TIME_SLOTS, action_size], dtype=np.float32)
-pmf_u2 = np.zeros([TIME_SLOTS, action_size], dtype=np.float32)
-pmf_u3 = np.zeros([TIME_SLOTS, action_size], dtype=np.float32)
-
-
-pmf_u1_store = []
-pmf_u2_store = []
-pmf_u3_store = []
-'''
 all_actions = []
 
 for iteration in range(iterations):
@@ -165,22 +126,6 @@ for iteration in range(iterations):
     channel_utilization = np.zeros([TIME_SLOTS], dtype=np.float32)
     
     '''Starting history with random states or -1's
-    '''
-    '''    
-    if flush_history:
-        for ii in range(step_size):
-            # OR starting with random history
-            action = env.sample()
-            obs = env.step(action)
-            next_state = utils.state_gen(action, obs)
-            reward = [i[1] for i in obs[:NUM_USERS]]
-            memory.add((state, action, reward, next_state))
-            if random_history:
-                state = next_state
-            else:
-                #flushing history on every iteration and start from 1's
-                state = -np.ones([NUM_USERS, state_size], dtype=np.int32)
-            history_input.append(state)
     '''
     for time_step in range(TIME_SLOTS):
 
@@ -211,13 +156,11 @@ for iteration in range(iterations):
             """
 
             prob_temp = logsumexp(beta*Q_state)      # log sum exp trick
-            # print("prob temp1: ", prob_temp)
+         
             prob_temp = beta*Q_state - prob_temp      # log(x/y) = log(x) - log(y)
-            # print("prob temp2: ", prob_temp)
-            # taking exponential of the converted log form
+      
             prob = (1 - epsilon) * np.exp(prob_temp) + epsilon / (NUM_CHANNELS + 1)
 
-            # print("prob: ", prob)
             prob_[user_i] = prob
             if not same_policy:
                 print("************ DIFFERENT POLICY MODE ************")
@@ -225,14 +168,6 @@ for iteration in range(iterations):
                 print("pmf for user " + str(user_i)+":", prob[0])
                 action[user_i] = np.random.choice(action_size, 1, p=prob[0])
 
-
-        
-        all_actions.append(action.tolist())
-        '''
-        pmf_u1[time_step] = prob_[0]
-        pmf_u2[time_step] = prob_[1]
-        pmf_u3[time_step] = prob_[2]
-        '''
         # now take action as predicted from the Q-values and receiving the observation from thr environment
         obs = env.step(action)
         print("action :", action)
@@ -240,17 +175,13 @@ for iteration in range(iterations):
 
         # generate next state from action and observation
         next_state = utils.state_gen(action, obs)
-        # print("next_state: ", next_state)
 
         # reward for all users
         reward = [i[1] for i in obs[:NUM_USERS]]
-        print("reward for all users at time t: ", reward)
 
         # calculate sum of rewards
         sum_rewards = np.sum(reward)
-        # print("reward", reward, "sum_reward", sum_rewards)
         channel_utilization[time_step] = sum_rewards / NUM_CHANNELS
-        # cumulative reward
         cum_reward.append(cum_reward[-1] + sum_rewards)
 
         # If NUM_CHANNELS = 2 , total possible reward = 2 ,
@@ -258,8 +189,7 @@ for iteration in range(iterations):
         collision = NUM_CHANNELS - sum_rewards
 
         cum_collision.append(cum_collision[-1] + collision)
-        # print("cum collision time ", str(time_step), cum_collision)
-        # print("cum reward time ", str(time_step), cum_reward)
+
         # ========================================================
         """
         reward for cooperative policy
@@ -291,10 +221,10 @@ for iteration in range(iterations):
 
         # rank 3 matrix of size [NUM_USERS,batch_size,step_size]
         actions = utils.get_actions_user(batch)
-        # print("actions", actions.shape, actions)
+
         # size[NUM_USERS, batch_size, step_size]
         rewards = utils.get_rewards_user(batch)
-        # print("rewards", rewards)
+
         # size [NUM_USERS,batch_size,step_size, state_size]
         next_states = utils.get_next_states_user(batch)
 
@@ -302,7 +232,6 @@ for iteration in range(iterations):
         # to feed into neural network
 
         states = np.reshape(states, [-1, states.shape[2], states.shape[3]])
-        # print("states: ", states)
         actions = np.reshape(actions, [-1, actions.shape[2]])
         rewards = np.reshape(rewards, [-1, rewards.shape[2]])
         next_states = np.reshape(next_states, [-1, next_states.shape[2], next_states.shape[3]])
@@ -319,62 +248,27 @@ for iteration in range(iterations):
             best_action = np.argmax(Q_next[i, :])
             Q_targets[i, actions[i, -1]] = rewards[i, -1] + gamma*target_Q_next[i, best_action]
 
-        # make one hot vectors of actions
-        # actions_one_hot = tf.one_hot(actions[:, -1], action_size)
-
         # calculating loss (bellman loss)
         # loss between whatever is predicted by Q_pred and the targets Q_targets
         loss = model.fit(states, Q_targets, validation_split=0.3, verbose=0, epochs=epochs)
-        loss_init += loss.history['loss'][0]
-        val_loss_init += loss.history['val_loss'][0]
 
         # updating weight after 5 iteration
         if iteration % update_freq == 0 and iteration > 1:
             # transfer_weights()
             target_model.set_weights(model.get_weights())
 
-        # dqn_agent.model.save_weights("3u2c_lr5_up15_R_b32.h5")
-
-        #print('loss: ', loss.history['loss'])
-        #print("val_loss: ", loss.history['val_loss'])
-        # print('avg_loss', sum(loss.history['loss'])/epochs)
-
         if epsilon > epsilon_min:
             epsilon *= epsilon_decay
 
         # plot after every 100 time slots
         if time_step % 50 == 49:
-            plt.figure(1)
-            # plt.plot(np.arange(100), total_reward, "r+")
-            # plt.xlabel('Time Slots')
-            # plt.ylabel('total rewards')
-            # plt.title('total rewards given per time_step')
-            # plt.show()
-            # plt.subplot(211)
-            # plt.plot(np.arange(51), cum_collision)
-            # plt.xlabel('Time Slot')
-            # plt.ylabel('cumulative collision')
-            # plt.show()
-            # plt.subplot(212)
-            # plt.plot(np.arange(51), cum_reward)
-            # plt.xlabel('Time Slot')
-            # plt.ylabel('cumulative reward')
-            # plt.title('Cumulative reward of all users')
-            # plt.show()
-
             cum_collision_temp.append(cum_collision[-1])
             cum_reward_temp.append(cum_reward[-1])
 
             total_reward = []
             cum_reward = [0]
             cum_collision = [0]
-    
-    
-    '''
-    pmf_u1_store.append(pmf_u1.tolist())
-    pmf_u2_store.append(pmf_u2.tolist())
-    pmf_u3_store.append(pmf_u2.tolist())
-    '''
+
     # for higher number of episodes, we can reduce these after certain time slots
     if beta < 20:
         beta *= 1.15
@@ -383,57 +277,16 @@ for iteration in range(iterations):
 
     cum_collision_ep[iteration] = np.sum(cum_collision_temp)
     cum_reward_ep[iteration] = np.sum(cum_reward_temp)
-    
-    '''
-    if cum_reward_ep[iteration] == NUM_USERS*TIME_SLOTS:
-        learning_rate = 0
-        dqn_agent = DQNAgent(step_size, state_size, action_size, dueling, learning_rate)
-        #epsilon = 0
-    '''
+
     # print("Avg loss: ", loss_init/TIME_SLOTS)
     avg_loss.append(loss_init / TIME_SLOTS)
     avg_val_loss.append(val_loss_init / TIME_SLOTS)
     
-'''
-    if iteration % 100 == 99 and iteration > 180:
-        plt.figure(2)
-        plt.plot(np.arange(TIME_SLOTS), channel_utilization, label="Channel Utilization")
-        plt.xlabel('TIME SLOT')
-        plt.ylabel('Channel Utilization')
-        plt.savefig('ch_util' + str(iteration) + '-200t-500e_up5_ep0.05_R.eps')
-        plt.show()
-'''
-'''
-json.dump(pmf_u1_store, f1)
-f1.close()
-
-json.dump(pmf_u2_store, f2)
-f2.close()
-
-json.dump(pmf_u3_store, f3)
-f3.close()
-'''
 json.dump(cum_reward_ep.tolist(), fr)
 fr.close()
 
 json.dump(all_actions, fa)
 fa.close()
-
-''' to open a particular file...
-
-with open('pmf_u1.txt') as f1:
-    data = json.load(f1)
-'''
-
-'''
-plt.figure(3)
-loss_p, = plt.plot(np.arange(iterations), avg_loss, label="Avg Loss")
-val_loss_p, = plt.plot(np.arange(iterations), avg_val_loss, label="Avg Val Loss")
-plt.legend(handles=[loss_p, val_loss_p])
-plt.xlabel('Iterations')
-plt.ylabel('Avg Losses')
-plt.savefig('losses_avg_200t-300e.eps')
-'''
 
 plt.figure(4)
 cum_reward_f, = plt.plot(np.arange(iterations), cum_reward_ep, label="Rewards")
